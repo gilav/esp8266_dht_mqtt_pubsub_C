@@ -25,7 +25,7 @@
 #include "config.h"
 
 
-#define VERSION "V:0.6.10 Lavaux Gilles 06/2017"
+#define VERSION "V:0.6.12 Lavaux Gilles 2017-08-04. Last change: first indor TLS/NON_TLS version"
 
 
 
@@ -72,10 +72,14 @@ DHT dht(DHTPIN, DHTTYPE, 20);
 
 
 // wifi client: unsecure or secure
-//WiFiClient wifiClient;
-WiFiClientSecure wifiClient;
+WiFiClient wifiClient;
+WiFiClientSecure wifiClientSecure;
 // mqtt client
-PubSubClient mqttClient(wifiClient);
+#ifdef USE_TLS
+  PubSubClient mqttClient(wifiClientSecure);
+#else
+  PubSubClient mqttClient(wifiClient);
+#endif
 
 // mqtt feeds
 String fullTopicTemp = MQTT_TOPIC_PREFIX + String(ESP.getChipId(), HEX) + String("/temp");
@@ -94,6 +98,12 @@ void setup() {
   delay(10);
   Serial.println();
   Serial.println(VERSION);
+
+  #ifdef USE_TLS
+    Serial.println(" SECURE VERSION !!!");
+  #else
+    Serial.println(" NON SECURE VERSION !!!");
+  #endif
 
   Serial.printf(" the ESP8266 chip ID as a 32-bit integer: %08X\n", ESP.getChipId());
   Serial.printf(" the flash chip ID as a 32-bit integer: %08X\n", ESP.getFlashChipId());
@@ -125,9 +135,12 @@ void setup() {
   WiFi.disconnect();
   Serial.println(" WIFI reset");
 
-  // mqtt 
-  //mqttClient.setServer(AIO_SERVER, AIO_SERVERPORT);
-  mqttClient.setServer(AIO_SERVER, AIO_SERVERPORTSECURE);
+  // mqtt
+  #ifdef USE_TLS
+    mqttClient.setServer(AIO_SERVER, AIO_SERVERPORTSECURE);
+  #else
+    mqttClient.setServer(AIO_SERVER, AIO_SERVERPORT);
+  #endif
   mqttClient.setCallback(mqtt_callback);
   delay(100);
 }
@@ -163,13 +176,13 @@ String getFreeHeap(){
 //
 void listDir() {
   char cwdName[2];
-
+  Serial.println("");
   strcpy(cwdName,"/");
   Dir dir=SPIFFS.openDir(cwdName);
   while( dir.next()) {
     String fn, fs;
     fn = dir.fileName();
-    fn.remove(0, 1);
+    //fn.remove(0, 1);
     fs = String(dir.fileSize());
     Serial.println(" - a flash data file:" + fn + "; size=" + fs);
   } // end while
@@ -178,22 +191,31 @@ void listDir() {
 //
 // set time based on SNTP server
 //
-void setTime(int timezone){
+boolean setTime(int timezone, uint8_t r){
   //int timezone = 2;
   // Synchronize time useing SNTP. This is necessary to verify that
   // the TLS certificates offered by the server are currently valid.
-  Serial.print(" setting time using SNTP ");
+  Serial.println("");
+  Serial.print(" setting time[");
+  Serial.print(r);
+  Serial.print("] using SNTP ");
   configTime(timezone * 3600, 0, "pool.ntp.org", "time.nist.gov");
   time_t now = time(nullptr);
+  uint8_t wait = 10;
   while (now < 1000) {
     delay(500);
     Serial.print("_-");
     now = time(nullptr);
+    wait--;
+    if (wait == 0) {
+       return false;
+    }
   }
- // digital clock display of the time
- Serial.print(" date is now: ");
- Serial.println(ctime(&now)); 
- Serial.println(" setTime done");
+  // digital clock display of the time
+  Serial.print(" date is now: ");
+  Serial.println(ctime(&now)); 
+  Serial.println(" setTime done");
+  return true;
 }
 
 
@@ -228,7 +250,7 @@ void loadCerts(){
   }else{
     Serial.print(" successfully opened crt file:");
     Serial.println(AIO_CERT_FILE);
-    wifiClient.loadCertificate(crt);
+    wifiClientSecure.loadCertificate(crt);
     Serial.println(" crt file loaded in client");
   }
 
@@ -238,7 +260,7 @@ void loadCerts(){
   }else{
     Serial.print(" successfully opened key file:");
     Serial.println(AIO_KEY_FILE);
-    wifiClient.loadPrivateKey(key);
+    wifiClientSecure.loadPrivateKey(key);
     Serial.println(" key file loaded in client");
   }
 }
@@ -362,40 +384,51 @@ boolean mqtt_connect() {
   }
   changeStatus(IP_OK);
 
-  // set system time 
-  setTime(2);
+  // set system time
+  uint8_t retries = 3;
+  boolean ok=false;
+  while (!ok && retries>0){
+    ok = setTime(2, -(retries-3));
+    delay(2000);
+    retries--;
+  }
 
   // load certificates
-  loadCerts();
+  #ifdef USE_TLS
+    loadCerts();
+  #endif
 
-  Serial.print("  connecting to secure server ");
+  /*Serial.print("  connecting to secure server ");
   Serial.print(AIO_SERVER);
   Serial.print(":");
   Serial.print(AIO_SERVERPORTSECURE);
   Serial.print("... ");
 
   uint8_t retries = 3;
-  if (1==2){
-    int res;
-    while (( res = wifiClient.connect(AIO_SERVER, AIO_SERVERPORTSECURE)) == 0) { // wifi client connect will return 0 if success
-         Serial.print(" #### !! wifi client connect error: ");
-         Serial.print(res);
-         Serial.println(" !!");
-         Serial.println("  retrying wifi connection in 5 seconds...");
-         unsigned long msecLimit = millis() + 5000;
-         while(baseAction() < msecLimit){
-            delay(100);
-         }
-         retries--;
-         if (retries == 0) {
-           return false;
-         }
-    }
-    Serial.println(" ok");
-    //wifiClient.stop();
+  int res;
+  while (( res = wifiClient.connect(AIO_SERVER, AIO_SERVERPORTSECURE)) == 0) { // wifi client connect will return 0 if success
+       Serial.print(" #### !! wifi client connect error: ");
+       Serial.print(res);
+       Serial.println(" !!");
+       Serial.println("  retrying wifi connection in 5 seconds...");
+       unsigned long msecLimit = millis() + 5000;
+       while(baseAction() < msecLimit){
+          delay(100);
+       }
+       retries--;
+       if (retries == 0) {
+         return false;
+       }
   }
+  Serial.println(" ok");
+  //wifiClient.stop();
+  */
 
-  Serial.print("  connecting to mqtt client ");
+  Serial.print("  connecting to secure mqtt client ");
+  Serial.print(AIO_SERVER);
+  Serial.print(":");
+  Serial.print(AIO_SERVERPORTSECURE);
+  Serial.print("... ");
   retries = 3;
   while (!mqttClient.connect((char*) clientId.c_str(), AIO_USERNAME, AIO_PASSWORD)) { // mqtt client connect will return true if success
        Serial.print("  !! MQTT connect error: ");
@@ -413,7 +446,7 @@ boolean mqtt_connect() {
   }
   //Serial.print("  mqtt_connect end: client state:");
   //Serial.println(mqttClient.state());
-  Serial.println("ok");
+  Serial.println(" connected !");
   changeStatus(MQTT_OK);
   return true;
 }

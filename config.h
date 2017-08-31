@@ -9,6 +9,7 @@
 #define AIO_CERT_FINGERPRINT "xx:xx:xx....."
 // MQTT topic
 const char *MQTT_TOPIC_PREFIX = "mobile/esp_";
+#define USE_TLS=true;
 
 // Access Points
 const char *ssid[1] = {"AP_1"};
@@ -16,11 +17,12 @@ const char *pass[1] = {"password_AP1"};
 const int apCount = 1;
 
 // LED
-#define LED 0 // GPIO 0
+#define LED 0 // GPIO 0; d3 ?
 #define LED_BLUE 2  // onboard blue led
 boolean useOnBoardLed=true;
 
 // DHT sensor
 #define DHTPIN 4        // GPIO 4 == D2
 #define DHTTYPE DHT11   // DHT 11
+//#define DHTTYPE DHT22   // DHT 22
 
